@@ -45,13 +45,14 @@ export abstract class Shape implements IShape {
     return { x: this.x, y: this.y, w: this.width, h: this.height };
   }
 
+  // Common resize logic (edge-based) – works for any bounding box
   resize(edge: ResizeEdge, startX: number, startY: number, currentX: number, currentY: number, canvasWidth: number, canvasHeight: number): void {
     let newX = this.x;
     let newY = this.y;
     let newW = this.width;
     let newH = this.height;
     const dx = currentX - startX;
-    const dy = currentY - startY;
+    const dy = currentY - startY;  
 
     switch (edge) {
       case 'nw':
@@ -91,6 +92,7 @@ export abstract class Shape implements IShape {
       default: return;
     }
 
+    // Clamp to canvas boundaries
     newX = Math.min(Math.max(0, newX), canvasWidth - newW);
     newY = Math.min(Math.max(0, newY), canvasHeight - newH);
     if (newX + newW > canvasWidth) newW = canvasWidth - newX;
@@ -102,16 +104,18 @@ export abstract class Shape implements IShape {
     this.height = newH;
   }
 
+  // Draw bounding box with 4 corner knobs only
   protected drawBoundingBox(ctx: CanvasRenderingContext2D, isSelected: boolean, isHovered: boolean, knobSize: number = 8): void {
     if (isSelected || isHovered) {
       ctx.save();
-      ctx.strokeStyle = '#3399ff';
+      ctx.strokeStyle = '#0080ff';
       ctx.lineWidth = 1.5;
       ctx.setLineDash([]);
       ctx.strokeRect(this.x, this.y, this.width, this.height);
       ctx.restore();
     }
 
+    // Only 4 corner knobs when selected
     if (isSelected) {
       const corners = [
         { x: this.x, y: this.y },
@@ -133,6 +137,9 @@ export abstract class Shape implements IShape {
   abstract isPointInside(px: number, py: number): boolean;
 }
 
+// ------------------------------------------------------------
+// 2. Concrete shape classes
+// ------------------------------------------------------------
 class Rectangle extends Shape {
   constructor(id: string, x: number, y: number, w: number, h: number, fill = 'rgba(100, 150, 220, 0.6)', stroke = '#2c3e66') {
     super(id, 'rect', x, y, w, h, fill, stroke);
@@ -157,6 +164,7 @@ class Ellipse extends Shape {
     super(id, 'ellipse', x, y, w, h, fill, stroke);
   }
 
+  // Using Ellipse equation to check if a point is inside the ellipse
   isPointInside(px: number, py: number): boolean {
     const rx = this.width / 2;
     const ry = this.height / 2;
@@ -195,6 +203,7 @@ class CanvasBackground {
     this.initBackground(width, height);
   }
 
+
   private initBackground(width: number, height: number): void {
     const canvas = document.createElement('canvas');
     canvas.width = width;
@@ -202,7 +211,7 @@ class CanvasBackground {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const pattern = this.createCheckerPattern(ctx, 50, '#f5efe7', '#d9c6ae');
+    const pattern = this.createCheckerPattern(ctx, 50, 'rgb(17, 17, 17)', '#272727');
     if (pattern) {
       ctx.fillStyle = pattern;
       ctx.fillRect(0, 0, width, height);
@@ -211,25 +220,22 @@ class CanvasBackground {
       ctx.fillRect(0, 0, width, height);
     }
 
-    ctx.strokeStyle = '#b8a78d';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(12, 12, width - 24, height - 24);
 
-    const rectW = 320, rectH = 120;
-    const rectX = (width - rectW) / 2;
-    const rectY = (height - rectH) / 2;
+    const rectW = 200, rectH = 80;
+    const rectX =  canvas.width/2 + (width - rectW) / 3;
+    const rectY = canvas.height/2 + (height - rectH) / 3;
     this.roundedRect(ctx, rectX, rectY, rectW, rectH, 40);
-    ctx.fillStyle = 'rgba(250, 245, 235, 0.85)';
+    ctx.fillStyle = 'rgba(22, 22, 22, 0.85)';
     ctx.fill();
-    ctx.strokeStyle = '#9b7e64';
+    ctx.strokeStyle = '#453629';
     ctx.lineWidth = 2.5;
     ctx.stroke();
 
-    ctx.fillStyle = '#4a3728';
+    ctx.fillStyle = '#a0846e';
     ctx.font = 'bold 56px "Segoe UI", system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('focal', width / 2, height / 2);
+    ctx.fillText('focal', canvas.width/2+ width / 3 +rectW / 6, canvas.height/2 + height / 3 + rectH / 4);
 
     this.canvas = canvas;
   }
@@ -269,7 +275,7 @@ class CanvasBackground {
 }
 
 // ------------------------------------------------------------
-// 4. ShapeManager (unchanged)
+// 4. ShapeManager – manages collection, selection, notifications
 // ------------------------------------------------------------
 class ShapeManager {
   private shapes: Map<string, IShape> = new Map();
@@ -345,14 +351,14 @@ class ShapeManager {
 }
 
 // ------------------------------------------------------------
-// 5. InteractionHandler – resizing only on selected shape
+// 5. InteractionHandler – handles all user input
 // ------------------------------------------------------------
 type DragMode = 'none' | 'move' | 'resize';
 
 class InteractionHandler {
   private canvas: HTMLCanvasElement;
   private shapeManager: ShapeManager;
-  private edgeTolerance: number = 8;
+  private edgeTolerance: number = 8; // pixels from bounding box edge
 
   private dragMode: DragMode = 'none';
   private activeEdge: ResizeEdge = null;
@@ -362,6 +368,7 @@ class InteractionHandler {
   private isPointerDown = false;
   private hoveredId: string | null = null;
 
+  // Drawing mode state
   public isDrawingMode: boolean = false;
   public drawingShapeType: 'rect' | 'ellipse' = 'rect';
   public isDrawingActive: boolean = false;
@@ -409,6 +416,7 @@ class InteractionHandler {
     return { x, y };
   }
 
+  // Detect which edge (or corner) the cursor is near – includes the whole edge
   private getEdgeUnderPoint(shape: IShape, px: number, py: number): ResizeEdge {
     const tol = this.edgeTolerance;
     const left = shape.x;
@@ -416,10 +424,13 @@ class InteractionHandler {
     const top = shape.y;
     const bottom = shape.y + shape.height;
 
+    // Corners (priority)
     if (Math.hypot(px - left, py - top) <= tol) return 'nw';
     if (Math.hypot(px - right, py - top) <= tol) return 'ne';
     if (Math.hypot(px - left, py - bottom) <= tol) return 'sw';
     if (Math.hypot(px - right, py - bottom) <= tol) return 'se';
+
+    // Edges (whole edge, not just midpoints)
     if (Math.abs(py - top) <= tol && px >= left && px <= right) return 'n';
     if (Math.abs(px - right) <= tol && py >= top && py <= bottom) return 'e';
     if (Math.abs(py - bottom) <= tol && px >= left && px <= right) return 's';
@@ -437,7 +448,7 @@ class InteractionHandler {
       case 's': return 'ns-resize';
       case 'sw': return 'sw-resize';
       case 'w': return 'ew-resize';
-      default: return 'grab';
+      default: return 'move';
     }
   }
 
@@ -457,48 +468,38 @@ class InteractionHandler {
 
     const selectedShape = this.shapeManager.getSelectedShape();
 
-    // 1) If a shape is selected, check if we hit its edge -> resize (keep selection)
+    // Case 1: There is a selected shape
     if (selectedShape) {
       const edge = this.getEdgeUnderPoint(selectedShape, x, y);
       if (edge) {
+        // Selected shape's edge hit → resize (allowed)
         this.dragMode = 'resize';
         this.activeEdge = edge;
         this.dragStart = { x, y };
         return;
       }
-      // If inside selected shape's body -> move
       if (selectedShape.isPointInside(x, y)) {
+        // Selected shape's interior hit → move (allowed)
         this.dragMode = 'move';
         this.dragOffset = { x: selectedShape.x - x, y: selectedShape.y - y };
         return;
       }
     }
 
-    // 2) No hit on selected shape -> look for any other shape (for selection)
+    // Case 2: No hit on selected shape → look for any other shape
     let targetShape: IShape | null = null;
-    let edge: ResizeEdge = null;
+    // Find the topmost shape under cursor (edge or interior)
     for (const shape of this.shapeManager.getAllShapes().reverse()) {
-      const e = this.getEdgeUnderPoint(shape, x, y);
-      if (e) {
+      if (this.getEdgeUnderPoint(shape, x, y) || shape.isPointInside(x, y)) {
         targetShape = shape;
-        edge = e;
         break;
       }
     }
-    if (!targetShape) {
-      targetShape = this.shapeManager.findShapeUnderPoint(x, y);
-    }
 
     if (targetShape) {
+      // Select the new shape – but DO NOT start dragging
       this.shapeManager.selectShape(targetShape.id);
-      if (edge) {
-        this.dragMode = 'resize';
-        this.activeEdge = edge;
-        this.dragStart = { x, y };
-      } else {
-        this.dragMode = 'move';
-        this.dragOffset = { x: targetShape.x - x, y: targetShape.y - y };
-      }
+      // No dragMode set – user must release mouse, then click again to drag/resize
     } else {
       this.shapeManager.selectShape(null);
     }
@@ -538,7 +539,7 @@ class InteractionHandler {
         }
       }
     } else {
-      // Update hover state (only visual bounding box, no resize cursor unless shape selected)
+      // Update hover and cursor
       let hoverShape: IShape | null = null;
       for (const shape of this.shapeManager.getAllShapes().reverse()) {
         if (shape.isPointInside(x, y) || this.getEdgeUnderPoint(shape, x, y)) {
@@ -549,15 +550,14 @@ class InteractionHandler {
       const newHoverId = hoverShape ? hoverShape.id : null;
       if (this.hoveredId !== newHoverId) this.hoveredId = newHoverId;
 
-      // Determine cursor: resize cursor only if selected shape AND edge is under cursor
       let cursor = 'default';
       const selected = this.shapeManager.getSelectedShape();
       if (selected && this.getEdgeUnderPoint(selected, x, y)) {
         cursor = this.getCursorForEdge(this.getEdgeUnderPoint(selected, x, y));
       } else if (hoverShape && !selected) {
-        cursor = 'grab'; // hover over unselected shape shows grab
+        cursor = 'default'; // hover over unselected shape shows default
       } else if (selected && selected.isPointInside(x, y)) {
-        cursor = 'grab'; // over selected body
+        cursor = 'move'; // over selected body
       } else if (this.isDrawingMode) {
         cursor = 'crosshair';
       }
@@ -572,7 +572,7 @@ class InteractionHandler {
       let w = Math.abs(this.drawingEnd.x - this.drawingStart.x);
       let h = Math.abs(this.drawingEnd.y - this.drawingStart.y);
       if (w >= 10 && h >= 10) {
-        const id = `shape_${Date.now()}_${Math.random()}`;
+        const id = `shape_${this.drawingShapeType}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
         let newShape: IShape;
         if (this.drawingShapeType === 'rect') {
           newShape = new Rectangle(id, x, y, w, h);
@@ -634,7 +634,7 @@ class InteractionHandler {
 }
 
 // ------------------------------------------------------------
-// 6. CanvasRenderer (unchanged)
+// 6. CanvasRenderer – draws background, shapes, and drawing preview
 // ------------------------------------------------------------
 class CanvasRenderer {
   private canvas: HTMLCanvasElement;
@@ -649,6 +649,7 @@ class CanvasRenderer {
     this.background = new CanvasBackground(width, height);
   }
 
+  // Main public render method – orchestrates the drawing steps
   public render(
     shapes: IShape[],
     selectedId: string | null,
@@ -659,49 +660,78 @@ class CanvasRenderer {
     drawingStart: { x: number; y: number },
     drawingEnd: { x: number; y: number }
   ): void {
+    this.drawBackground();
+    this.drawShapes(shapes, selectedId, hoveredId);
+    this.drawDrawingPreview(isDrawingMode, isDrawingActive, drawingShapeType, drawingStart, drawingEnd);
+  }
+
+  // 1) Draw the static background (checker pattern, border, text)
+  private drawBackground(): void {
     const bgImage = this.background.getImage();
     if (bgImage) {
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       this.ctx.drawImage(bgImage, 0, 0);
     }
+  }
+
+  // 2) Draw all shapes, applying selection and hover highlights
+  private drawShapes(shapes: IShape[], selectedId: string | null, hoveredId: string | null): void {
     for (const shape of shapes) {
       const isSelected = shape.id === selectedId;
       const isHovered = shape.id === hoveredId;
       shape.draw(this.ctx, isSelected, isHovered, 0);
     }
+  }
 
-    if (isDrawingMode && isDrawingActive) {
-      const x = Math.min(drawingStart.x, drawingEnd.x);
-      const y = Math.min(drawingStart.y, drawingEnd.y);
-      const w = Math.abs(drawingEnd.x - drawingStart.x);
-      const h = Math.abs(drawingEnd.y - drawingStart.y);
-      if (w > 0 && h > 0) {
-        this.ctx.save();
-        this.ctx.setLineDash([6, 8]);
-        this.ctx.strokeStyle = '#2c3e66';
-        this.ctx.lineWidth = 2;
-        this.ctx.fillStyle = 'rgba(100, 150, 220, 0.2)';
-        if (drawingShapeType === 'rect') {
-          this.ctx.fillRect(x, y, w, h);
-          this.ctx.strokeRect(x, y, w, h);
-        } else {
-          const cx = x + w / 2;
-          const cy = y + h / 2;
-          const rx = w / 2;
-          const ry = h / 2;
-          this.ctx.beginPath();
-          this.ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-          this.ctx.fill();
-          this.ctx.stroke();
-        }
-        this.ctx.restore();
-      }
+  // 3) Draw the temporary dashed preview while the user is dragging to draw a new shape
+  private drawDrawingPreview(
+    isDrawingMode: boolean,
+    isDrawingActive: boolean,
+    drawingShapeType: 'rect' | 'ellipse',
+    drawingStart: { x: number; y: number },
+    drawingEnd: { x: number; y: number }
+  ): void {
+    if (!isDrawingMode || !isDrawingActive) return;
+
+    const x = Math.min(drawingStart.x, drawingEnd.x);
+    const y = Math.min(drawingStart.y, drawingEnd.y);
+    const w = Math.abs(drawingEnd.x - drawingStart.x);
+    const h = Math.abs(drawingEnd.y - drawingStart.y);
+    if (w <= 0 || h <= 0) return;
+
+    this.ctx.save();
+    this.ctx.setLineDash([6, 8]);
+    this.ctx.strokeStyle = '#2c3e66';
+    this.ctx.lineWidth = 2;
+    this.ctx.fillStyle = 'rgba(100, 150, 220, 0.2)';
+
+    if (drawingShapeType === 'rect') {
+      this.drawRectPreview(x, y, w, h);
+    } else {
+      this.drawEllipsePreview(x, y, w, h);
     }
+
+    this.ctx.restore();
+  }
+
+  private drawRectPreview(x: number, y: number, w: number, h: number): void {
+    this.ctx.fillRect(x, y, w, h);
+    this.ctx.strokeRect(x, y, w, h);
+  }
+
+  private drawEllipsePreview(x: number, y: number, w: number, h: number): void {
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const rx = w / 2;
+    const ry = h / 2;
+    this.ctx.beginPath();
+    this.ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    this.ctx.fill();
+    this.ctx.stroke();
   }
 }
-
 // ------------------------------------------------------------
-// 7. CanvasController (unchanged)
+// 7. CanvasController – facade orchestrating everything
 // ------------------------------------------------------------
 class CanvasController {
   private renderer: CanvasRenderer;
@@ -715,6 +745,7 @@ class CanvasController {
     this.shapeManager = new ShapeManager();
     this.interaction = new InteractionHandler(canvas, this.shapeManager);
 
+    // Wire events
     this.shapeManager.onShapesChange = () => this.render();
     this.shapeManager.onSelectedChange = () => this.render();
     this.interaction.onDrawComplete = (shape) => {
@@ -729,6 +760,7 @@ class CanvasController {
     this.interaction.onCursorChange = (cursor) => { canvas.style.cursor = cursor; };
     this.interaction.onDrawingStateChange = () => this.render();
 
+    // Start render loop
     const loop = () => {
       const hovered = this.interaction.getHoveredId();
       if (this.hoveredId !== hovered) {
@@ -757,6 +789,7 @@ class CanvasController {
     );
   }
 
+  // Public API
   public onDrawingModeChange?: (isDrawing: boolean) => void;
 
   public startDraw(shapeType: 'rect' | 'ellipse'): void {
@@ -801,7 +834,7 @@ class CanvasController {
 }
 
 // ------------------------------------------------------------
-// 8. React App (unchanged)
+// 8. React App component with Tailwind CSS styling
 // ------------------------------------------------------------
 const App: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -810,7 +843,6 @@ const App: React.FC = () => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [shapeType, setShapeType] = useState<'rect' | 'ellipse'>('rect');
-
   const [fillColor, setFillColor] = useState('#6496dc');
   const [fillOpacity, setFillOpacity] = useState(0.6);
   const [strokeColor, setStrokeColor] = useState('#2c3e66');
@@ -819,17 +851,15 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!canvasRef.current) return;
     const width = window.innerWidth - 40;
-    const height = window.innerHeight - 300;
+    const height = window.innerHeight - 280;
     canvasRef.current.width = width;
     canvasRef.current.height = height;
-
     const controller = new CanvasController(canvasRef.current, width, height);
     const shapeManager = (controller as any).shapeManager;
-    shapeManager.onShapesChange = (data) => setShapes(data);
-    shapeManager.onSelectedChange = (id) => setSelectedId(id);
-    controller.onDrawingModeChange = (drawing) => setIsDrawingMode(drawing);
+    shapeManager.onShapesChange = setShapes;
+    shapeManager.onSelectedChange = setSelectedId;
+    controller.onDrawingModeChange = setIsDrawingMode;
     controllerRef.current = controller;
-
     return () => controller.destroy();
   }, []);
 
@@ -875,27 +905,28 @@ const App: React.FC = () => {
     return `rgba(${r}, ${g}, ${b}, ${opacity})`;
   };
 
+  const handleDraw = () => controllerRef.current?.startDraw(shapeType);
+  const handleCancelDraw = () => controllerRef.current?.cancelDraw();
+  const handleDelete = () => controllerRef.current?.deleteSelected();
+  const handleSelectShape = (id: string) => controllerRef.current?.selectShapeById(id);
   const handleFillColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newColor = e.target.value;
     setFillColor(newColor);
     const rgba = hexToRgba(newColor, fillOpacity);
     controllerRef.current?.setSelectedFillColor(rgba);
   };
-
   const handleFillOpacityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newOpacity = parseFloat(e.target.value);
     setFillOpacity(newOpacity);
     const rgba = hexToRgba(fillColor, newOpacity);
     controllerRef.current?.setSelectedFillColor(rgba);
   };
-
   const handleStrokeColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newColor = e.target.value;
     setStrokeColor(newColor);
     const rgba = hexToRgba(newColor, strokeOpacity);
     controllerRef.current?.setSelectedStrokeColor(rgba);
   };
-
   const handleStrokeOpacityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newOpacity = parseFloat(e.target.value);
     setStrokeOpacity(newOpacity);
@@ -903,81 +934,135 @@ const App: React.FC = () => {
     controllerRef.current?.setSelectedStrokeColor(rgba);
   };
 
-  const handleDrawNew = () => controllerRef.current?.startDraw(shapeType);
-  const handleCancelDraw = () => controllerRef.current?.cancelDraw();
-  const handleDeleteSelected = () => controllerRef.current?.deleteSelected();
-  const handleSelectShape = (id: string) => controllerRef.current?.selectShapeById(id);
-
   return (
-    <div style={{ margin: 0, padding: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#e2dccd', minHeight: '100vh', fontFamily: 'sans-serif' }}>
-      <div style={{ margin: '12px', background: '#fff8ef', padding: '12px 24px', borderRadius: '60px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
-        <select value={shapeType} onChange={(e) => setShapeType(e.target.value as 'rect' | 'ellipse')} style={{ padding: '8px 16px', borderRadius: 40, border: '1px solid #ccc', background: 'white' }}>
-          <option value="rect">Rectangle</option>
-          <option value="ellipse">Ellipse</option>
-        </select>
-        <button onClick={handleDrawNew} disabled={isDrawingMode} style={{ background: isDrawingMode ? '#ccc' : '#4c8baf', border: 'none', padding: '8px 20px', borderRadius: 40, color: 'white', fontWeight: 'bold', cursor: isDrawingMode ? 'not-allowed' : 'pointer' }}>
-          ✏️ Draw {shapeType === 'rect' ? 'Rectangle' : 'Ellipse'}
-        </button>
-        {isDrawingMode && (
-          <button onClick={handleCancelDraw} style={{ background: '#e07a5f', border: 'none', padding: '8px 20px', borderRadius: 40, color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>
-            ❌ Cancel Drawing
-          </button>
-        )}
-        <button onClick={handleDeleteSelected} disabled={!selectedId} style={{ background: selectedId ? '#b8a78d' : '#ccc', border: 'none', padding: '8px 20px', borderRadius: 40, color: 'white', fontWeight: 'bold', cursor: selectedId ? 'pointer' : 'not-allowed' }}>
-          🗑️ Delete Selected
-        </button>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#f5efe7', padding: '4px 12px', borderRadius: 40 }}>
-          <span>🎨 Fill:</span>
-          <input type="color" value={fillColor} onChange={handleFillColorChange} disabled={!selectedId} style={{ width: 40, height: 40, borderRadius: 8, border: '1px solid #ccc' }} />
-          <input type="range" min="0" max="1" step="0.01" value={fillOpacity} onChange={handleFillOpacityChange} disabled={!selectedId} style={{ width: 80 }} />
-          <span style={{ fontSize: '12px', width: '40px' }}>{Math.round(fillOpacity * 100)}%</span>
+    <div className="min-h-screen bg-[#f3f1eb] font-sans flex flex-col items-center">
+      {/* Minimal menubar – Tailwind only, no emojis */}
+      <div className="mt-4 mb-2 bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-2 flex flex-wrap items-center justify-center gap-3">
+        {/* Shape selector */}
+        <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-1">
+          <span className="text-xs font-medium text-stone-600">Shape</span>
+          <select
+            value={shapeType}
+            onChange={(e) => setShapeType(e.target.value as 'rect' | 'ellipse')}
+            className="bg-white border border-gray-200 rounded-md px-2 py-1 text-sm cursor-pointer focus:outline-none"
+          >
+            <option value="rect">Rectangle</option>
+            <option value="ellipse">Ellipse</option>
+          </select>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#f5efe7', padding: '4px 12px', borderRadius: 40 }}>
-          <span>✏️ Stroke:</span>
-          <input type="color" value={strokeColor} onChange={handleStrokeColorChange} disabled={!selectedId} style={{ width: 40, height: 40, borderRadius: 8, border: '1px solid #ccc' }} />
-          <input type="range" min="0" max="1" step="0.01" value={strokeOpacity} onChange={handleStrokeOpacityChange} disabled={!selectedId} style={{ width: 80 }} />
-          <span style={{ fontSize: '12px', width: '40px' }}>{Math.round(strokeOpacity * 100)}%</span>
+        {/* Draw / Cancel */}
+        <button
+          onClick={handleDraw}
+          disabled={isDrawingMode}
+          className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${
+            isDrawingMode ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-[#1e6f9f] text-white hover:bg-[#1a5a82]'
+          }`}
+        >
+          Draw
+        </button>
+        {isDrawingMode && (
+          <button
+            onClick={handleCancelDraw}
+            className="px-4 py-1.5 rounded-lg text-sm font-medium border border-gray-300 text-gray-600 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+        )}
+
+        {/* Delete */}
+        <button
+          onClick={handleDelete}
+          disabled={!selectedId}
+          className={`px-4 py-1.5 rounded-lg text-sm font-medium ${
+            selectedId ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+          }`}
+        >
+          Delete
+        </button>
+
+        {/* Divider */}
+        <div className="w-px h-6 bg-gray-200" />
+
+        {/* Fill control */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-gray-700">Fill</span>
+          <input
+            type="color"
+            value={fillColor}
+            onChange={handleFillColorChange}
+            disabled={!selectedId}
+            className="w-7 h-7 rounded border border-gray-300 cursor-pointer disabled:opacity-50"
+          />
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={fillOpacity}
+            onChange={handleFillOpacityChange}
+            disabled={!selectedId}
+            className="w-20 h-1.5 cursor-pointer disabled:opacity-50"
+          />
+          <span className="text-xs text-gray-500 w-9">{Math.round(fillOpacity * 100)}%</span>
+        </div>
+
+        {/* Stroke control */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-gray-700">Stroke</span>
+          <input
+            type="color"
+            value={strokeColor}
+            onChange={handleStrokeColorChange}
+            disabled={!selectedId}
+            className="w-7 h-7 rounded border border-gray-300 cursor-pointer disabled:opacity-50"
+          />
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={strokeOpacity}
+            onChange={handleStrokeOpacityChange}
+            disabled={!selectedId}
+            className="w-20 h-1.5 cursor-pointer disabled:opacity-50"
+          />
+          <span className="text-xs text-gray-500 w-9">{Math.round(strokeOpacity * 100)}%</span>
         </div>
       </div>
 
+      {/* Canvas */}
       <canvas
         ref={canvasRef}
-        style={{ display: 'block', boxShadow: '0 12px 28px rgba(0,0,0,0.2)', borderRadius: 16 }}
+        className="rounded-xl shadow-md"
+        style={{ display: 'block' }}
       />
 
-      <div style={{ marginTop: 20, background: '#fff8ef', borderRadius: 24, padding: '12px 20px', width: '90%', maxWidth: 800, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
-        <h3 style={{ margin: '0 0 8px 0', fontSize: '1.2rem' }}>📦 Shapes ({shapes.length})</h3>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      {/* Shape list panel */}
+      <div className="mt-5 bg-white rounded-2xl px-5 py-3 w-[90%] max-w-3xl shadow-sm border border-gray-100">
+        <h3 className="text-sm font-medium text-gray-700 mb-2">Shapes ({shapes.length})</h3>
+        <div className="flex flex-wrap gap-2">
           {shapes.map(shape => (
             <div
               key={shape.id}
               onClick={() => handleSelectShape(shape.id)}
-              style={{
-                background: selectedId === shape.id ? '#e0d6c0' : '#f5f0e6',
-                padding: '6px 12px',
-                borderRadius: 40,
-                cursor: 'pointer',
-                border: selectedId === shape.id ? '2px solid #2c3e66' : '1px solid #ccc',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8
-              }}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm cursor-pointer transition ${
+                selectedId === shape.id ? 'bg-blue-50 border border-blue-300' : 'bg-gray-50 border border-gray-200 hover:bg-gray-100'
+              }`}
             >
-              <div style={{ width: 20, height: 20, background: shape.fill, border: `2px solid ${shape.stroke}`, borderRadius: shape.type === 'ellipse' ? '50%' : 4 }} />
-              <span style={{ fontFamily: 'monospace' }}>{shape.type === 'rect' ? '□' : '○'} {shape.w}×{shape.h}</span>
+              <div
+                className="w-4 h-4 rounded-sm"
+                style={{ background: shape.fill, border: `1px solid ${shape.stroke}`, borderRadius: shape.type === 'ellipse' ? '50%' : '2px' }}
+              />
+              <span className="font-mono text-xs text-gray-600">{shape.type === 'rect' ? '□' : '○'} {shape.w}×{shape.h}</span>
             </div>
           ))}
-          {shapes.length === 0 && <span style={{ color: '#8b6b4d' }}>No shapes – select a shape and click "Draw"</span>}
+          {shapes.length === 0 && <span className="text-xs text-gray-400">No shapes – select a shape and click Draw</span>}
         </div>
       </div>
 
-      <p style={{ fontFamily: 'monospace', marginTop: 12, color: '#5e4b34', textAlign: 'center' }}>
-        🖱️ <strong>Hover</strong> → blue bounding box. <strong>Click</strong> → select (4 corner knobs).<br/>
-        🎨 <strong>Choose shape type</strong> then click "Draw" and drag on canvas.<br/>
-        ✋ Drag selected shape to move, drag <strong>any edge or corner of the selected shape</strong> to resize.<br/>
-        🎚️ Opacity sliders and color pickers affect the selected shape.
+      <p className="text-xs text-gray-400 mt-3 text-center max-w-xl">
+        Hover → blue bounding box. Click → select (corner knobs). Drag selected shape to move, drag any edge to resize. Color & opacity apply to selected shape.
       </p>
     </div>
   );
