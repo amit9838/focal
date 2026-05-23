@@ -164,7 +164,6 @@ class Ellipse extends Shape {
     super(id, 'ellipse', x, y, w, h, fill, stroke);
   }
 
-  // Using Ellipse equation to check if a point is inside the ellipse
   isPointInside(px: number, py: number): boolean {
     const rx = this.width / 2;
     const ry = this.height / 2;
@@ -194,7 +193,7 @@ class Ellipse extends Shape {
 }
 
 // ------------------------------------------------------------
-// 3. Background renderer (unchanged)
+// 3. Background renderer (dark checker + “focal”)
 // ------------------------------------------------------------
 class CanvasBackground {
   private canvas: HTMLCanvasElement | null = null;
@@ -202,7 +201,6 @@ class CanvasBackground {
   constructor(width: number, height: number) {
     this.initBackground(width, height);
   }
-
 
   private initBackground(width: number, height: number): void {
     const canvas = document.createElement('canvas');
@@ -220,9 +218,8 @@ class CanvasBackground {
       ctx.fillRect(0, 0, width, height);
     }
 
-
     const rectW = 200, rectH = 80;
-    const rectX =  canvas.width/2 + (width - rectW) / 3;
+    const rectX = canvas.width/2 + (width - rectW) / 3;
     const rectY = canvas.height/2 + (height - rectH) / 3;
     this.roundedRect(ctx, rectX, rectY, rectW, rectH, 40);
     ctx.fillStyle = 'rgba(22, 22, 22, 0.85)';
@@ -235,7 +232,7 @@ class CanvasBackground {
     ctx.font = 'bold 56px "Segoe UI", system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('focal', canvas.width/2+ width / 3 +rectW / 6, canvas.height/2 + height / 3 + rectH / 4);
+    ctx.fillText('focal', canvas.width/2 + width / 3 + rectW / 6, canvas.height/2 + height / 3 + rectH / 4);
 
     this.canvas = canvas;
   }
@@ -351,14 +348,14 @@ class ShapeManager {
 }
 
 // ------------------------------------------------------------
-// 5. InteractionHandler – handles all user input
+// 5. InteractionHandler – with temporary shape drawing (no dashed preview)
 // ------------------------------------------------------------
 type DragMode = 'none' | 'move' | 'resize';
 
 class InteractionHandler {
   private canvas: HTMLCanvasElement;
   private shapeManager: ShapeManager;
-  private edgeTolerance: number = 8; // pixels from bounding box edge
+  private edgeTolerance: number = 8;
 
   private dragMode: DragMode = 'none';
   private activeEdge: ResizeEdge = null;
@@ -372,8 +369,9 @@ class InteractionHandler {
   public isDrawingMode: boolean = false;
   public drawingShapeType: 'rect' | 'ellipse' = 'rect';
   public isDrawingActive: boolean = false;
-  public drawingStart = { x: 0, y: 0 };
-  public drawingEnd = { x: 0, y: 0 };
+  private drawingStart = { x: 0, y: 0 };
+  private drawingEnd = { x: 0, y: 0 };
+  public tempShape: IShape | null = null;   // temporary shape being drawn
 
   public onDrawComplete?: (shape: IShape) => void;
   public onShapeMoved?: (shape: IShape) => void;
@@ -416,7 +414,6 @@ class InteractionHandler {
     return { x, y };
   }
 
-  // Detect which edge (or corner) the cursor is near – includes the whole edge
   private getEdgeUnderPoint(shape: IShape, px: number, py: number): ResizeEdge {
     const tol = this.edgeTolerance;
     const left = shape.x;
@@ -424,13 +421,10 @@ class InteractionHandler {
     const top = shape.y;
     const bottom = shape.y + shape.height;
 
-    // Corners (priority)
     if (Math.hypot(px - left, py - top) <= tol) return 'nw';
     if (Math.hypot(px - right, py - top) <= tol) return 'ne';
     if (Math.hypot(px - left, py - bottom) <= tol) return 'sw';
     if (Math.hypot(px - right, py - bottom) <= tol) return 'se';
-
-    // Edges (whole edge, not just midpoints)
     if (Math.abs(py - top) <= tol && px >= left && px <= right) return 'n';
     if (Math.abs(px - right) <= tol && py >= top && py <= bottom) return 'e';
     if (Math.abs(py - bottom) <= tol && px >= left && px <= right) return 's';
@@ -462,6 +456,13 @@ class InteractionHandler {
       this.isDrawingActive = true;
       this.drawingStart = { x, y };
       this.drawingEnd = { x, y };
+      // Create temporary shape with zero size (will be updated in handleMove)
+      const tempId = `temp_${Date.now()}`;
+      if (this.drawingShapeType === 'rect') {
+        this.tempShape = new Rectangle(tempId, x, y, 0, 0, 'rgba(100, 150, 220, 0.6)', '#2c3e66');
+      } else {
+        this.tempShape = new Ellipse(tempId, x, y, 0, 0, 'rgba(150, 100, 220, 0.6)', '#4a2c66');
+      }
       this.onDrawingStateChange?.(true);
       return;
     }
@@ -472,14 +473,12 @@ class InteractionHandler {
     if (selectedShape) {
       const edge = this.getEdgeUnderPoint(selectedShape, x, y);
       if (edge) {
-        // Selected shape's edge hit → resize (allowed)
         this.dragMode = 'resize';
         this.activeEdge = edge;
         this.dragStart = { x, y };
         return;
       }
       if (selectedShape.isPointInside(x, y)) {
-        // Selected shape's interior hit → move (allowed)
         this.dragMode = 'move';
         this.dragOffset = { x: selectedShape.x - x, y: selectedShape.y - y };
         return;
@@ -488,7 +487,6 @@ class InteractionHandler {
 
     // Case 2: No hit on selected shape → look for any other shape
     let targetShape: IShape | null = null;
-    // Find the topmost shape under cursor (edge or interior)
     for (const shape of this.shapeManager.getAllShapes().reverse()) {
       if (this.getEdgeUnderPoint(shape, x, y) || shape.isPointInside(x, y)) {
         targetShape = shape;
@@ -497,9 +495,7 @@ class InteractionHandler {
     }
 
     if (targetShape) {
-      // Select the new shape – but DO NOT start dragging
       this.shapeManager.selectShape(targetShape.id);
-      // No dragMode set – user must release mouse, then click again to drag/resize
     } else {
       this.shapeManager.selectShape(null);
     }
@@ -512,6 +508,19 @@ class InteractionHandler {
     if (this.isPointerDown) {
       if (this.isDrawingMode && this.isDrawingActive) {
         this.drawingEnd = { x, y };
+        // Update temporary shape dimensions
+        if (this.tempShape) {
+          let nx = Math.min(this.drawingStart.x, this.drawingEnd.x);
+          let ny = Math.min(this.drawingStart.y, this.drawingEnd.y);
+          let nw = Math.abs(this.drawingEnd.x - this.drawingStart.x);
+          let nh = Math.abs(this.drawingEnd.y - this.drawingStart.y);
+          if (nw > 0 && nh > 0) {
+            this.tempShape.x = nx;
+            this.tempShape.y = ny;
+            this.tempShape.width = nw;
+            this.tempShape.height = nh;
+          }
+        }
         this.onDrawingStateChange?.(true);
         return;
       }
@@ -555,9 +564,9 @@ class InteractionHandler {
       if (selected && this.getEdgeUnderPoint(selected, x, y)) {
         cursor = this.getCursorForEdge(this.getEdgeUnderPoint(selected, x, y));
       } else if (hoverShape && !selected) {
-        cursor = 'default'; // hover over unselected shape shows default
+        cursor = 'default';
       } else if (selected && selected.isPointInside(x, y)) {
-        cursor = 'move'; // over selected body
+        cursor = 'move';
       } else if (this.isDrawingMode) {
         cursor = 'crosshair';
       }
@@ -567,20 +576,22 @@ class InteractionHandler {
 
   private handleUp = () => {
     if (this.isDrawingMode && this.isDrawingActive) {
-      let x = Math.min(this.drawingStart.x, this.drawingEnd.x);
-      let y = Math.min(this.drawingStart.y, this.drawingEnd.y);
-      let w = Math.abs(this.drawingEnd.x - this.drawingStart.x);
-      let h = Math.abs(this.drawingEnd.y - this.drawingStart.y);
-      if (w >= 10 && h >= 10) {
-        const id = `shape_${this.drawingShapeType}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
-        let newShape: IShape;
+      const w = Math.abs(this.drawingEnd.x - this.drawingStart.x);
+      const h = Math.abs(this.drawingEnd.y - this.drawingStart.y);
+      if (w >= 10 && h >= 10 && this.tempShape) {
+        // Create permanent shape with same properties
+        const finalId = `shape_${this.drawingShapeType}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+        let finalShape: IShape;
         if (this.drawingShapeType === 'rect') {
-          newShape = new Rectangle(id, x, y, w, h);
+          finalShape = new Rectangle(finalId, this.tempShape.x, this.tempShape.y, this.tempShape.width, this.tempShape.height,
+            this.tempShape.fillColor, this.tempShape.strokeColor);
         } else {
-          newShape = new Ellipse(id, x, y, w, h);
+          finalShape = new Ellipse(finalId, this.tempShape.x, this.tempShape.y, this.tempShape.width, this.tempShape.height,
+            this.tempShape.fillColor, this.tempShape.strokeColor);
         }
-        this.onDrawComplete?.(newShape);
+        this.onDrawComplete?.(finalShape);
       }
+      this.tempShape = null;
       this.isDrawingActive = false;
       this.isDrawingMode = false;
       this.onDrawingStateChange?.(false);
@@ -598,6 +609,7 @@ class InteractionHandler {
     if (this.isDrawingMode && this.isDrawingActive) {
       this.isDrawingActive = false;
       this.isDrawingMode = false;
+      this.tempShape = null;
       this.onDrawingStateChange?.(false);
     }
     this.hoveredId = null;
@@ -614,6 +626,7 @@ class InteractionHandler {
   public cancelDraw(): void {
     this.isDrawingMode = false;
     this.isDrawingActive = false;
+    this.tempShape = null;
     this.onDrawingStateChange?.(false);
     this.onCursorChange?.('default');
   }
@@ -634,7 +647,7 @@ class InteractionHandler {
 }
 
 // ------------------------------------------------------------
-// 6. CanvasRenderer – draws background, shapes, and drawing preview
+// 6. CanvasRenderer – draws background, shapes, and temporary shape
 // ------------------------------------------------------------
 class CanvasRenderer {
   private canvas: HTMLCanvasElement;
@@ -649,23 +662,20 @@ class CanvasRenderer {
     this.background = new CanvasBackground(width, height);
   }
 
-  // Main public render method – orchestrates the drawing steps
   public render(
     shapes: IShape[],
     selectedId: string | null,
     hoveredId: string | null,
-    isDrawingMode: boolean,
-    isDrawingActive: boolean,
-    drawingShapeType: 'rect' | 'ellipse',
-    drawingStart: { x: number; y: number },
-    drawingEnd: { x: number; y: number }
+    tempShape: IShape | null
   ): void {
     this.drawBackground();
     this.drawShapes(shapes, selectedId, hoveredId);
-    this.drawDrawingPreview(isDrawingMode, isDrawingActive, drawingShapeType, drawingStart, drawingEnd);
+    if (tempShape) {
+      // Draw the temporary shape (without selection/hover indicators)
+      tempShape.draw(this.ctx, false, false, 0);
+    }
   }
 
-  // 1) Draw the static background (checker pattern, border, text)
   private drawBackground(): void {
     const bgImage = this.background.getImage();
     if (bgImage) {
@@ -674,7 +684,6 @@ class CanvasRenderer {
     }
   }
 
-  // 2) Draw all shapes, applying selection and hover highlights
   private drawShapes(shapes: IShape[], selectedId: string | null, hoveredId: string | null): void {
     for (const shape of shapes) {
       const isSelected = shape.id === selectedId;
@@ -682,54 +691,8 @@ class CanvasRenderer {
       shape.draw(this.ctx, isSelected, isHovered, 0);
     }
   }
-
-  // 3) Draw the temporary dashed preview while the user is dragging to draw a new shape
-  private drawDrawingPreview(
-    isDrawingMode: boolean,
-    isDrawingActive: boolean,
-    drawingShapeType: 'rect' | 'ellipse',
-    drawingStart: { x: number; y: number },
-    drawingEnd: { x: number; y: number }
-  ): void {
-    if (!isDrawingMode || !isDrawingActive) return;
-
-    const x = Math.min(drawingStart.x, drawingEnd.x);
-    const y = Math.min(drawingStart.y, drawingEnd.y);
-    const w = Math.abs(drawingEnd.x - drawingStart.x);
-    const h = Math.abs(drawingEnd.y - drawingStart.y);
-    if (w <= 0 || h <= 0) return;
-
-    this.ctx.save();
-    this.ctx.setLineDash([6, 8]);
-    this.ctx.strokeStyle = '#2c3e66';
-    this.ctx.lineWidth = 2;
-    this.ctx.fillStyle = 'rgba(100, 150, 220, 0.2)';
-
-    if (drawingShapeType === 'rect') {
-      this.drawRectPreview(x, y, w, h);
-    } else {
-      this.drawEllipsePreview(x, y, w, h);
-    }
-
-    this.ctx.restore();
-  }
-
-  private drawRectPreview(x: number, y: number, w: number, h: number): void {
-    this.ctx.fillRect(x, y, w, h);
-    this.ctx.strokeRect(x, y, w, h);
-  }
-
-  private drawEllipsePreview(x: number, y: number, w: number, h: number): void {
-    const cx = x + w / 2;
-    const cy = y + h / 2;
-    const rx = w / 2;
-    const ry = h / 2;
-    this.ctx.beginPath();
-    this.ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-    this.ctx.fill();
-    this.ctx.stroke();
-  }
 }
+
 // ------------------------------------------------------------
 // 7. CanvasController – facade orchestrating everything
 // ------------------------------------------------------------
@@ -745,7 +708,6 @@ class CanvasController {
     this.shapeManager = new ShapeManager();
     this.interaction = new InteractionHandler(canvas, this.shapeManager);
 
-    // Wire events
     this.shapeManager.onShapesChange = () => this.render();
     this.shapeManager.onSelectedChange = () => this.render();
     this.interaction.onDrawComplete = (shape) => {
@@ -760,7 +722,6 @@ class CanvasController {
     this.interaction.onCursorChange = (cursor) => { canvas.style.cursor = cursor; };
     this.interaction.onDrawingStateChange = () => this.render();
 
-    // Start render loop
     const loop = () => {
       const hovered = this.interaction.getHoveredId();
       if (this.hoveredId !== hovered) {
@@ -777,19 +738,9 @@ class CanvasController {
   private render(): void {
     const shapes = this.shapeManager.getAllShapes();
     const selectedId = this.shapeManager.getSelectedId();
-    this.renderer.render(
-      shapes,
-      selectedId,
-      this.hoveredId,
-      this.interaction.isDrawingMode,
-      this.interaction.isDrawingActive,
-      this.interaction.drawingShapeType,
-      this.interaction.drawingStart,
-      this.interaction.drawingEnd
-    );
+    this.renderer.render(shapes, selectedId, this.hoveredId, this.interaction.tempShape);
   }
 
-  // Public API
   public onDrawingModeChange?: (isDrawing: boolean) => void;
 
   public startDraw(shapeType: 'rect' | 'ellipse'): void {
@@ -936,9 +887,8 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#f3f1eb] font-sans flex flex-col items-center">
-      {/* Minimal menubar – Tailwind only, no emojis */}
+      {/* Minimal menubar – Tailwind only */}
       <div className="mt-4 mb-2 bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-2 flex flex-wrap items-center justify-center gap-3">
-        {/* Shape selector */}
         <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-1">
           <span className="text-xs font-medium text-stone-600">Shape</span>
           <select
@@ -951,7 +901,6 @@ const App: React.FC = () => {
           </select>
         </div>
 
-        {/* Draw / Cancel */}
         <button
           onClick={handleDraw}
           disabled={isDrawingMode}
@@ -970,7 +919,6 @@ const App: React.FC = () => {
           </button>
         )}
 
-        {/* Delete */}
         <button
           onClick={handleDelete}
           disabled={!selectedId}
@@ -981,10 +929,8 @@ const App: React.FC = () => {
           Delete
         </button>
 
-        {/* Divider */}
         <div className="w-px h-6 bg-gray-200" />
 
-        {/* Fill control */}
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-gray-700">Fill</span>
           <input
@@ -1007,7 +953,6 @@ const App: React.FC = () => {
           <span className="text-xs text-gray-500 w-9">{Math.round(fillOpacity * 100)}%</span>
         </div>
 
-        {/* Stroke control */}
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-gray-700">Stroke</span>
           <input
@@ -1031,14 +976,12 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Canvas */}
       <canvas
         ref={canvasRef}
         className="rounded-xl shadow-md"
         style={{ display: 'block' }}
       />
 
-      {/* Shape list panel */}
       <div className="mt-5 bg-white rounded-2xl px-5 py-3 w-[90%] max-w-3xl shadow-sm border border-gray-100">
         <h3 className="text-sm font-medium text-gray-700 mb-2">Shapes ({shapes.length})</h3>
         <div className="flex flex-wrap gap-2">
