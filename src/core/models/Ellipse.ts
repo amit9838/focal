@@ -1,16 +1,8 @@
-import { Shape } from "./Shape";
+import { Shape } from './Shape';
 
 export class Ellipse extends Shape {
-  constructor(
-    id: string,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    fill = "rgba(150, 100, 220, 0.6)",
-    stroke = "#4a2c66",
-  ) {
-    super(id, "ellipse", x, y, w, h, fill, stroke);
+  constructor(id: string, x: number, y: number, w: number, h: number, fill = 'rgba(150, 100, 220, 0.6)', stroke = '#4a2c66') {
+    super(id, 'ellipse', x, y, w, h, fill, stroke);
   }
 
   isPointInside(px: number, py: number): boolean {
@@ -23,12 +15,7 @@ export class Ellipse extends Shape {
     return dx * dx + dy * dy <= 1;
   }
 
-  draw(
-    ctx: CanvasRenderingContext2D,
-    isSelected: boolean,
-    isHovered: boolean,
-    showKnobs: boolean,
-  ): void {
+  draw(ctx: CanvasRenderingContext2D, isSelected: boolean, isHovered: boolean, showKnobs: boolean): void {
     const cx = this.x + this.width / 2;
     const cy = this.y + this.height / 2;
     const rx = this.width / 2;
