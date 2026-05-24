@@ -1,5 +1,5 @@
-import type { IShape } from '../types';
-import { ShapeManager } from '../managers/ShapeManager';
+import type { IShape } from "../types";
+import { ShapeManager } from "../managers/ShapeManager";
 
 export interface IToolContext {
   canvas: HTMLCanvasElement;
@@ -17,5 +17,6 @@ export interface ITool {
   onMouseDown?(e: MouseEvent | TouchEvent, context: IToolContext): void;
   onMouseMove?(e: MouseEvent | TouchEvent, context: IToolContext): void;
   onMouseUp?(e: MouseEvent | TouchEvent, context: IToolContext): void;
-  onDraw?(ctx: CanvasRenderingContext2D, context: IToolContext): void; // for temporary overlays
-}   
+  onDraw?(ctx: CanvasRenderingContext2D, context: IToolContext): void;
+  onCursorChange?(cursor: string, context: IToolContext): void;
+}

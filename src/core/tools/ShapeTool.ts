@@ -24,7 +24,7 @@ export class ShapeTool implements ITool {
   private drawingShapeType: "rect" | "ellipse" = "rect";
   private edgeTolerance = 8;
 
-  // Store temporary shape locally – avoids relying solely on context.tempShape
+  // Store temporary shape locally
   private localTempShape: IShape | null = null;
 
   // ------------------------------------------------------------------
@@ -99,15 +99,13 @@ export class ShapeTool implements ITool {
   // ------------------------------------------------------------------
   onMouseDown(e: MouseEvent | TouchEvent, context: IToolContext): void {
     e.preventDefault();
-
     const { x, y } = context.getCanvasCoords(e);
     this.isPointerDown = true;
 
-    // DRAWING MODE (activated via UI button)
+    // DRAWING MODE
     if (this.isDrawingActive && this.localTempShape) {
       this.drawingStart = { x, y };
       this.drawingEnd = { x, y };
-      // Ensure the temporary shape is in the context for rendering
       context.setTempShape(this.localTempShape);
       return;
     }
@@ -216,7 +214,6 @@ export class ShapeTool implements ITool {
           this.localTempShape.y = ny;
           this.localTempShape.width = nw;
           this.localTempShape.height = nh;
-          // Push to context so renderer can draw it
           context.setTempShape(this.localTempShape);
           context.requestRender();
         }
@@ -292,13 +289,62 @@ export class ShapeTool implements ITool {
         this.marqueeEnd = { x, y };
         context.requestRender();
       }
+    } else {
+      // ----- Update cursor when not dragging -----
+      let cursor = "default";
+      const selectedIds = shapeManager.getSelectedIds();
+      const groupBounds = this.getGroupBounds(shapeManager);
+
+      // 1) Group selection (2+ shapes) – show resize/move on group bounding box
+      if (groupBounds && selectedIds.length > 1) {
+        const dummy = {
+          x: groupBounds.x,
+          y: groupBounds.y,
+          width: groupBounds.w,
+          height: groupBounds.h,
+          id: "",
+          type: "rect" as const,
+          fillColor: "",
+          strokeColor: "",
+          isPointInside: () => false,
+          draw: () => {},
+          resize: () => {},
+          getBounds: () => groupBounds,
+        };
+        const edge = this.getEdgeUnderPoint(dummy, x, y);
+        if (edge) {
+          cursor = this.getCursorForEdge(edge);
+        } else if (
+          x >= groupBounds.x &&
+          x <= groupBounds.x + groupBounds.w &&
+          y >= groupBounds.y &&
+          y <= groupBounds.y + groupBounds.h
+        ) {
+          cursor = "move";
+        }
+      }
+      // 2) Single selected shape – show resize on its edges, move on body
+      else if (selectedIds.length === 1) {
+        const shape = shapeManager.getShape(selectedIds[0]);
+        if (shape) {
+          const edge = this.getEdgeUnderPoint(shape, x, y);
+          if (edge) {
+            cursor = this.getCursorForEdge(edge);
+          } else if (shape.isPointInside(x, y)) {
+            cursor = "move";
+          }
+        }
+      }
+
+      // Apply cursor to canvas
+      context.canvas.style.cursor = cursor;
     }
   }
 
   onMouseUp(e: MouseEvent | TouchEvent, context: IToolContext): void {
     const shapeManager = (context as any).shapeManager;
 
-    // ----- Finish drawing a new shape -----
+    // Finish drawing
     if (this.isDrawingActive && this.localTempShape) {
       const w = Math.abs(this.drawingEnd.x - this.drawingStart.x);
       const h = Math.abs(this.drawingEnd.y - this.drawingStart.y);
@@ -329,14 +375,13 @@ export class ShapeTool implements ITool {
         shapeManager.addShape(finalShape);
         shapeManager.setSelected([finalShape.id], false);
       }
-      // Clean up temporary shape
       this.localTempShape = null;
       context.setTempShape(null);
       this.isDrawingActive = false;
       context.requestRender();
     }
 
-    // ----- Finish marquee selection -----
+    // Finish marquee selection
     if (this.dragMode === "marquee") {
       const rect = {
         x: Math.min(this.marqueeStart.x, this.marqueeEnd.x),
@@ -360,7 +405,7 @@ export class ShapeTool implements ITool {
       context.requestRender();
     }
 
-    // Reset all drag/resize modes
+    // Reset all modes
     this.dragMode = "none";
     this.activeEdge = null;
     this.groupTransform = null;
@@ -395,7 +440,7 @@ export class ShapeTool implements ITool {
   }
 
   public startDrawing(context: IToolContext): void {
-    if (this.localTempShape) return; // already drawing
+    if (this.localTempShape) return;
     const tempId = `temp_${Date.now()}`;
     const temp =
       this.drawingShapeType === "rect"
