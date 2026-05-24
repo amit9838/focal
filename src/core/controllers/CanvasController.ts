@@ -1,6 +1,7 @@
 import { ShapeManager } from "../managers/ShapeManager";
 import { CanvasRenderer } from "../renderers/CanvasRenderer";
 import { ToolManager } from "../tools/ToolManager";
+import { ShapeTool } from "../tools/ShapeTool";
 import type { IToolContext } from "../tools/ITool";
 import { type IShape } from "../types";
 import { CanvasAdapter } from "../adapters/CanvasAdapter";
@@ -15,18 +16,21 @@ export class CanvasController {
   private tempShape: IShape | null = null;
   private toolContext: IToolContext;
 
-  constructor(
-    canvas: HTMLCanvasElement,
-    width: number,
-    height: number,
-    toolManager: ToolManager,
-  ) {
+  constructor(canvas: HTMLCanvasElement, width: number, height: number) {
     this.shapeManager = new ShapeManager();
-    this.toolManager = toolManager;
+    this.toolManager = new ToolManager();
     this.canvasAdapter = new CanvasAdapter(canvas);
     this.renderer = new CanvasRenderer(canvas, width, height);
 
-    // Create tool context – this object is reused for all tool calls
+    // ------------------------------------------------------------------
+    // Register all built-in tools here
+    // ------------------------------------------------------------------
+    const shapeTool = new ShapeTool();
+    this.toolManager.register(shapeTool);
+    // Future: this.toolManager.register(new DrawTool());
+    // Future: this.toolManager.register(new PaintTool());
+
+    // Create tool context (shared across all tools)
     this.toolContext = {
       canvas,
       shapeManager: this.shapeManager,
@@ -39,9 +43,8 @@ export class CanvasController {
       getCanvasCoords: (e) => this.canvasAdapter.getCanvasCoords(e),
     };
 
-    // Activate the shape tool – this happens only once
+    // Activate default tool
     this.toolManager.activate("shape", this.toolContext);
-    console.log("Shape tool activated");
 
     // Wire DOM events
     canvas.addEventListener("mousemove", this.handleMove);
@@ -64,6 +67,9 @@ export class CanvasController {
     this.animationFrame = requestAnimationFrame(loop);
   }
 
+  // ------------------------------------------------------------------
+  // Event handlers
+  // ------------------------------------------------------------------
   private handleDown = (e: MouseEvent | TouchEvent) => {
     this.toolManager.handleMouseDown(e, this.toolContext);
   };
@@ -88,6 +94,9 @@ export class CanvasController {
     this.render();
   };
 
+  // ------------------------------------------------------------------
+  // Rendering
+  // ------------------------------------------------------------------
   private render(): void {
     const shapes = this.shapeManager.getAllShapes();
     const selectedIds = this.shapeManager.getSelectedIds();
@@ -105,7 +114,12 @@ export class CanvasController {
     this.toolManager.drawOverlay(ctx, this.toolContext);
   }
 
-  private getGroupBounds(): { x: number; y: number; w: number; h: number } | null {
+  private getGroupBounds(): {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null {
     const selected = this.shapeManager.getSelectedShapes();
     if (selected.length < 2) return null;
     const left = Math.min(...selected.map((s) => s.x));
@@ -115,19 +129,21 @@ export class CanvasController {
     return { x: left, y: top, w: right - left, h: bottom - top };
   }
 
-  // ---------- Public API for the UI ----------
+  // ------------------------------------------------------------------
+  // Public API for the UI
+  // ------------------------------------------------------------------
   public setDrawingShapeType(type: "rect" | "ellipse"): void {
-    const shapeTool = (this.toolManager as any).tools.get("shape");
+    const shapeTool = (this.toolManager as any).tools.get("shape") as ShapeTool;
     shapeTool?.setDrawingShapeType(type);
   }
 
   public startDrawing(): void {
-    const shapeTool = (this.toolManager as any).tools.get("shape");
+    const shapeTool = (this.toolManager as any).tools.get("shape") as ShapeTool;
     shapeTool?.startDrawing(this.toolContext);
   }
 
   public cancelDrawing(): void {
-    const shapeTool = (this.toolManager as any).tools.get("shape");
+    const shapeTool = (this.toolManager as any).tools.get("shape") as ShapeTool;
     shapeTool?.cancelDrawing(this.toolContext);
   }
 
@@ -153,6 +169,9 @@ export class CanvasController {
     this.shapeManager.setSelected([id], false);
   }
 
+  // ------------------------------------------------------------------
+  // Cleanup
+  // ------------------------------------------------------------------
   public destroy(): void {
     if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
     const canvas = this.toolContext.canvas;

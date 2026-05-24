@@ -63,15 +63,24 @@ export class ShapeTool implements ITool {
 
   public getCursorForEdge(edge: ResizeEdge): string {
     switch (edge) {
-      case "nw": return "nw-resize";
-      case "n": return "ns-resize";
-      case "ne": return "ne-resize";
-      case "e": return "ew-resize";
-      case "se": return "se-resize";
-      case "s": return "ns-resize";
-      case "sw": return "sw-resize";
-      case "w": return "ew-resize";
-      default: return "move";
+      case "nw":
+        return "nw-resize";
+      case "n":
+        return "ns-resize";
+      case "ne":
+        return "ne-resize";
+      case "e":
+        return "ew-resize";
+      case "se":
+        return "se-resize";
+      case "s":
+        return "ns-resize";
+      case "sw":
+        return "sw-resize";
+      case "w":
+        return "ew-resize";
+      default:
+        return "move";
     }
   }
 
@@ -110,10 +119,18 @@ export class ShapeTool implements ITool {
     // 1) Group selection (multiple shapes)
     if (groupBounds && selectedIds.length > 1) {
       const dummy = {
-        x: groupBounds.x, y: groupBounds.y,
-        width: groupBounds.w, height: groupBounds.h,
-        id: "", type: "rect" as const, fillColor: "", strokeColor: "",
-        isPointInside: () => false, draw: () => {}, resize: () => {}, getBounds: () => groupBounds
+        x: groupBounds.x,
+        y: groupBounds.y,
+        width: groupBounds.w,
+        height: groupBounds.h,
+        id: "",
+        type: "rect" as const,
+        fillColor: "",
+        strokeColor: "",
+        isPointInside: () => false,
+        draw: () => {},
+        resize: () => {},
+        getBounds: () => groupBounds,
       };
       const edge = this.getEdgeUnderPoint(dummy, x, y);
       if (edge) {
@@ -123,8 +140,12 @@ export class ShapeTool implements ITool {
         this.groupTransform = new GroupTransform(shapeManager.getSelectedShapes());
         return;
       }
-      if (x >= groupBounds.x && x <= groupBounds.x + groupBounds.w &&
-          y >= groupBounds.y && y <= groupBounds.y + groupBounds.h) {
+      if (
+        x >= groupBounds.x &&
+        x <= groupBounds.x + groupBounds.w &&
+        y >= groupBounds.y &&
+        y <= groupBounds.y + groupBounds.h
+      ) {
         this.dragMode = "groupMove";
         this.dragOffset = { x: groupBounds.x - x, y: groupBounds.y - y };
         this.groupTransform = new GroupTransform(shapeManager.getSelectedShapes());
@@ -157,7 +178,10 @@ export class ShapeTool implements ITool {
       if (additive) {
         const current = shapeManager.getSelectedIds();
         if (current.includes(underCursor.id)) {
-          shapeManager.setSelected(current.filter((id: string) => id !== underCursor.id), false);
+          shapeManager.setSelected(
+            current.filter((id: string) => id !== underCursor.id),
+            false,
+          );
         } else {
           shapeManager.setSelected([...current, underCursor.id], false);
         }
@@ -212,8 +236,15 @@ export class ShapeTool implements ITool {
 
       // ----- Group resize -----
       if (this.dragMode === "groupResize" && this.groupTransform && this.activeEdge) {
-        this.groupTransform.resize(this.activeEdge, this.dragStart.x, this.dragStart.y, x, y,
-                                   context.canvas.width, context.canvas.height);
+        this.groupTransform.resize(
+          this.activeEdge,
+          this.dragStart.x,
+          this.dragStart.y,
+          x,
+          y,
+          context.canvas.width,
+          context.canvas.height,
+        );
         for (const shape of shapeManager.getSelectedShapes()) shapeManager.updateShape(shape);
         this.dragStart = { x, y };
         context.requestRender();
@@ -242,8 +273,15 @@ export class ShapeTool implements ITool {
         const selected = shapeManager.getSelectedShapes();
         if (selected.length === 1) {
           const shape = selected[0];
-          shape.resize(this.activeEdge, this.dragStart.x, this.dragStart.y, x, y,
-                       context.canvas.width, context.canvas.height);
+          shape.resize(
+            this.activeEdge,
+            this.dragStart.x,
+            this.dragStart.y,
+            x,
+            y,
+            context.canvas.width,
+            context.canvas.height,
+          );
           this.dragStart = { x, y };
           shapeManager.updateShape(shape);
           context.requestRender();
@@ -268,13 +306,25 @@ export class ShapeTool implements ITool {
         const finalId = `shape_${this.drawingShapeType}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
         let finalShape: IShape;
         if (this.drawingShapeType === "rect") {
-          finalShape = new Rectangle(finalId, this.localTempShape.x, this.localTempShape.y,
-                                     this.localTempShape.width, this.localTempShape.height,
-                                     this.localTempShape.fillColor, this.localTempShape.strokeColor);
+          finalShape = new Rectangle(
+            finalId,
+            this.localTempShape.x,
+            this.localTempShape.y,
+            this.localTempShape.width,
+            this.localTempShape.height,
+            this.localTempShape.fillColor,
+            this.localTempShape.strokeColor,
+          );
         } else {
-          finalShape = new Ellipse(finalId, this.localTempShape.x, this.localTempShape.y,
-                                   this.localTempShape.width, this.localTempShape.height,
-                                   this.localTempShape.fillColor, this.localTempShape.strokeColor);
+          finalShape = new Ellipse(
+            finalId,
+            this.localTempShape.x,
+            this.localTempShape.y,
+            this.localTempShape.width,
+            this.localTempShape.height,
+            this.localTempShape.fillColor,
+            this.localTempShape.strokeColor,
+          );
         }
         shapeManager.addShape(finalShape);
         shapeManager.setSelected([finalShape.id], false);
@@ -347,9 +397,10 @@ export class ShapeTool implements ITool {
   public startDrawing(context: IToolContext): void {
     if (this.localTempShape) return; // already drawing
     const tempId = `temp_${Date.now()}`;
-    const temp = this.drawingShapeType === "rect"
-      ? new Rectangle(tempId, 0, 0, 0, 0, "rgba(100, 150, 220, 0.6)", "#2c3e66")
-      : new Ellipse(tempId, 0, 0, 0, 0, "rgba(150, 100, 220, 0.6)", "#4a2c66");
+    const temp =
+      this.drawingShapeType === "rect"
+        ? new Rectangle(tempId, 0, 0, 0, 0, "rgba(100, 150, 220, 0.6)", "#2c3e66")
+        : new Ellipse(tempId, 0, 0, 0, 0, "rgba(150, 100, 220, 0.6)", "#4a2c66");
     this.localTempShape = temp;
     context.setTempShape(temp);
     this.isDrawingActive = true;
